@@ -1,0 +1,26 @@
+import express from 'express';
+import newsService from '../services/newsService.js';
+
+const router = express.Router();
+
+// Get corporate news
+router.get('/corporate', async (req, res) => {
+  try {
+    const news = await newsService.getCorporateNews();
+    res.json({
+      success: true,
+      data: news,
+      count: news.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error fetching news:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch news',
+      message: error.message
+    });
+  }
+});
+
+export default router;
