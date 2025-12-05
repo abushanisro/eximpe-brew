@@ -17,6 +17,8 @@ const Index = () => {
 
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [corporateNews, setCorporateNews] = useState<NewsItem[]>([]);
+  const [debtNews, setDebtNews] = useState<NewsItem[]>([]);
+  const [commodityNews, setCommodityNews] = useState<NewsItem[]>([]);
 
   const getCurrentDate = () => {
     const today = new Date();
@@ -42,6 +44,26 @@ const Index = () => {
     }
   };
 
+  const fetchDebtNews = async () => {
+    try {
+      const news = await apiService.getDebtNews();
+      setDebtNews(news);
+      console.log('Debt news updated:', news.length, 'items');
+    } catch (error) {
+      console.error('Error fetching debt news:', error);
+    }
+  };
+
+  const fetchCommodityNews = async () => {
+    try {
+      const news = await apiService.getCommodityNews();
+      setCommodityNews(news);
+      console.log('Commodity news updated:', news.length, 'items');
+    } catch (error) {
+      console.error('Error fetching commodity news:', error);
+    }
+  };
+
   const fetchMarketData = async () => {
     try {
       const data = await apiService.getMarketData();
@@ -57,13 +79,15 @@ const Index = () => {
     // Fetch data on component mount
     fetchMarketData();
     fetchCorporateNews();
-    
+    fetchDebtNews();
+    fetchCommodityNews();
+
     // Set up interval to fetch market data every 30 seconds during market hours
     const marketInterval = setInterval(() => {
       const now = new Date();
       const hours = now.getHours();
       const day = now.getDay();
-      
+
       // Update only during market hours (9 AM to 4 PM, Monday to Friday)
       if (day >= 1 && day <= 5 && hours >= 9 && hours <= 16) {
         fetchMarketData();
@@ -73,6 +97,8 @@ const Index = () => {
     // Set up interval to fetch news every 5 minutes
     const newsInterval = setInterval(() => {
       fetchCorporateNews();
+      fetchDebtNews();
+      fetchCommodityNews();
     }, 300000); // 5 minutes
 
     return () => {
@@ -230,13 +256,24 @@ const Index = () => {
               <div className="w-6 h-6 bg-teal-500 rounded"></div>
               <span className="text-xl font-bold text-slate-900">Debt Markets</span>
             </div>
-            <ul className="space-y-3 text-sm text-slate-700 leading-relaxed">
-              <li>- 10Y G-sec yield stayed flat at 6.60%</li>
-              <li>- Employment in manufacturing industry up 5.92% at 18.4 mn in FY24: Govt</li>
-              <li>- India may become world's second-largest economy by 2038: EY report</li>
-              <li>- Russia-led EAEU team to visit India to speed up free trade agreement</li>
-              <li>- Trump's 60% India tariffs kick in</li>
-            </ul>
+            {marketData.debtMarkets?.indiaBond10Y && (
+              <div className="mb-4 text-sm text-slate-700">
+                <span className="font-bold">{marketData.debtMarkets.indiaBond10Y.name}</span> yield at <span className="font-bold">{marketData.debtMarkets.indiaBond10Y.yield}%</span>
+              </div>
+            )}
+            {debtNews.length > 0 ? (
+              <ul className="space-y-3 text-sm text-slate-700 leading-relaxed">
+                {debtNews.map((news, index) => (
+                  <li key={index}>- {news.title}</li>
+                ))}
+              </ul>
+            ) : (
+              <div className="text-sm text-slate-500 text-center py-4">
+                <div className="mb-2">📊</div>
+                <div>No real-time debt market news available</div>
+                <div className="text-xs mt-1">Configure NEWSAPI_KEY in backend/.env for live news</div>
+              </div>
+            )}
           </div>
 
           {/* Currency */}
@@ -278,16 +315,23 @@ const Index = () => {
               <div className="w-6 h-6 bg-teal-500 rounded"></div>
               <span className="text-xl font-bold text-slate-900">Commodities</span>
             </div>
-            <ul className="space-y-2 text-sm text-slate-700">
-              <li>
+            <div className="space-y-2 text-sm text-slate-700">
+              <div>
                 - Brent <span className="font-bold">${marketData.brent.price}/bbl</span>
-                <span className={`ml-1 ${getChangeColor(marketData.brent.change)}`}>{formatChange(marketData.brent.change)}</span>, 
+                <span className={`ml-1 ${getChangeColor(marketData.brent.change)}`}>{formatChange(marketData.brent.change)}</span>,
                 Gold <span className="font-bold">${marketData.gold.price}/oz</span>
                 <span className={`ml-1 ${getChangeColor(marketData.gold.change)}`}>{formatChange(marketData.gold.change)}</span>
-              </li>
-              <li>- Gold changed little with inflation data in focus, while concerns about the Federal Reserve's independence lingered after Trump tried to fire a Fed governor.</li>
-              <li>- Oil edges up on US crude stocks drop, impact of US tariffs on India</li>
-            </ul>
+              </div>
+              {commodityNews.length > 0 ? (
+                commodityNews.map((news, index) => (
+                  <div key={index}>- {news.title}</div>
+                ))
+              ) : (
+                <div className="text-slate-500 text-center py-3">
+                  <div className="text-xs">Configure NEWSAPI_KEY in backend/.env for commodity news</div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Global Markets */}
@@ -296,11 +340,66 @@ const Index = () => {
               <div className="w-6 h-6 bg-teal-500 rounded"></div>
               <span className="text-xl font-bold text-slate-900">Global Markets</span>
             </div>
-            <ul className="space-y-2 text-sm text-slate-700">
-              <li>- US: Dow +0.32%, S&P 500 +0.24%, Nasdaq +0.21%</li>
-              <li>- Europe: FTSE -0.11%, DAX -0.44%, CAC +0.44%</li>
-              <li>- Asia: Nikkei -0.14%, Hang Seng -1.27%, Shanghai -1.76%</li>
-            </ul>
+            {marketData.globalMarkets ? (
+              <ul className="space-y-2 text-sm text-slate-700">
+                <li>
+                  - US:
+                  {marketData.globalMarkets.dow && (
+                    <>
+                      {' '}Dow <span className={getChangeColor(marketData.globalMarkets.dow.change)}>{formatChange(marketData.globalMarkets.dow.change)}</span>
+                    </>
+                  )}
+                  {marketData.globalMarkets.sp500 && (
+                    <>
+                      , S&P 500 <span className={getChangeColor(marketData.globalMarkets.sp500.change)}>{formatChange(marketData.globalMarkets.sp500.change)}</span>
+                    </>
+                  )}
+                  {marketData.globalMarkets.nasdaq && (
+                    <>
+                      , Nasdaq <span className={getChangeColor(marketData.globalMarkets.nasdaq.change)}>{formatChange(marketData.globalMarkets.nasdaq.change)}</span>
+                    </>
+                  )}
+                </li>
+                <li>
+                  - Europe:
+                  {marketData.globalMarkets.ftse && (
+                    <>
+                      {' '}FTSE <span className={getChangeColor(marketData.globalMarkets.ftse.change)}>{formatChange(marketData.globalMarkets.ftse.change)}</span>
+                    </>
+                  )}
+                  {marketData.globalMarkets.dax && (
+                    <>
+                      , DAX <span className={getChangeColor(marketData.globalMarkets.dax.change)}>{formatChange(marketData.globalMarkets.dax.change)}</span>
+                    </>
+                  )}
+                  {marketData.globalMarkets.cac && (
+                    <>
+                      , CAC <span className={getChangeColor(marketData.globalMarkets.cac.change)}>{formatChange(marketData.globalMarkets.cac.change)}</span>
+                    </>
+                  )}
+                </li>
+                <li>
+                  - Asia:
+                  {marketData.globalMarkets.nikkei && (
+                    <>
+                      {' '}Nikkei <span className={getChangeColor(marketData.globalMarkets.nikkei.change)}>{formatChange(marketData.globalMarkets.nikkei.change)}</span>
+                    </>
+                  )}
+                  {marketData.globalMarkets.hangseng && (
+                    <>
+                      , Hang Seng <span className={getChangeColor(marketData.globalMarkets.hangseng.change)}>{formatChange(marketData.globalMarkets.hangseng.change)}</span>
+                    </>
+                  )}
+                  {marketData.globalMarkets.shanghai && (
+                    <>
+                      , Shanghai <span className={getChangeColor(marketData.globalMarkets.shanghai.change)}>{formatChange(marketData.globalMarkets.shanghai.change)}</span>
+                    </>
+                  )}
+                </li>
+              </ul>
+            ) : (
+              <div className="text-sm text-slate-500 text-center py-4">Loading global market data...</div>
+            )}
           </div>
         </div>
 

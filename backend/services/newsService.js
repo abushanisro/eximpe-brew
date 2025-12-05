@@ -36,8 +36,7 @@ class NewsService {
   async getNewsFromNewsAPI() {
     const apiKey = process.env.NEWSAPI_KEY;
     if (!apiKey) {
-      console.warn('NEWSAPI_KEY not configured');
-      return [];
+      throw new Error('NEWSAPI_KEY not configured');
     }
 
     try {
@@ -61,7 +60,7 @@ class NewsService {
       }));
     } catch (error) {
       console.error('NewsAPI error:', error.message);
-      return [];
+      throw error;
     }
   }
 
@@ -69,8 +68,7 @@ class NewsService {
   async getNewsFromGNews() {
     const apiKey = process.env.GNEWS_API_KEY;
     if (!apiKey) {
-      console.warn('GNEWS_API_KEY not configured');
-      return [];
+      throw new Error('GNEWS_API_KEY not configured');
     }
 
     try {
@@ -94,7 +92,7 @@ class NewsService {
       }));
     } catch (error) {
       console.error('GNews error:', error.message);
-      return [];
+      throw error;
     }
   }
 
@@ -102,8 +100,7 @@ class NewsService {
   async getNewsFromFinnhub() {
     const apiKey = process.env.FINNHUB_API_KEY;
     if (!apiKey) {
-      console.warn('FINNHUB_API_KEY not configured');
-      return [];
+      throw new Error('FINNHUB_API_KEY not configured');
     }
 
     try {
@@ -124,7 +121,7 @@ class NewsService {
       }));
     } catch (error) {
       console.error('Finnhub error:', error.message);
-      return [];
+      throw error;
     }
   }
 
@@ -149,10 +146,10 @@ class NewsService {
           sentiment: 'neutral'
         }));
       }
-      return [];
+      throw new Error('No RSS data available');
     } catch (error) {
       console.error('RSS feed error:', error.message);
-      return [];
+      throw error;
     }
   }
 
@@ -167,6 +164,90 @@ class NewsService {
     if (diffMins < 60) return `${diffMins}m ago`;
     if (diffHours < 24) return `${diffHours}h ago`;
     return `${diffDays}d ago`;
+  }
+
+  // Get debt/economic news
+  async getDebtMarketNews() {
+    const cacheKey = 'debt_market_news';
+    const cached = this.getCached(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const results = [];
+
+      // Try NewsAPI if key is available
+      const newsApiKey = process.env.NEWSAPI_KEY;
+      if (newsApiKey) {
+        try {
+          const response = await axios.get('https://newsapi.org/v2/everything', {
+            params: {
+              q: 'India economy OR India GDP OR India manufacturing OR India trade OR India bonds',
+              language: 'en',
+              sortBy: 'publishedAt',
+              pageSize: 5,
+              apiKey: newsApiKey
+            },
+            timeout: 15000
+          });
+
+          results.push(...response.data.articles.map(article => ({
+            title: article.title,
+            source: article.source.name,
+            time: this.getRelativeTime(new Date(article.publishedAt))
+          })));
+        } catch (error) {
+          console.error('NewsAPI debt news error:', error.message);
+        }
+      }
+
+      this.setCached(cacheKey, results.slice(0, 5));
+      return results.slice(0, 5);
+    } catch (error) {
+      console.error('Error in getDebtMarketNews:', error.message);
+      throw error;
+    }
+  }
+
+  // Get commodity news
+  async getCommodityNews() {
+    const cacheKey = 'commodity_news';
+    const cached = this.getCached(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const results = [];
+
+      // Try NewsAPI if key is available
+      const newsApiKey = process.env.NEWSAPI_KEY;
+      if (newsApiKey) {
+        try {
+          const response = await axios.get('https://newsapi.org/v2/everything', {
+            params: {
+              q: 'gold price OR oil price OR brent crude OR commodity markets',
+              language: 'en',
+              sortBy: 'publishedAt',
+              pageSize: 3,
+              apiKey: newsApiKey
+            },
+            timeout: 15000
+          });
+
+          results.push(...response.data.articles.map(article => ({
+            title: article.title,
+            source: article.source.name,
+            time: this.getRelativeTime(new Date(article.publishedAt))
+          })));
+        } catch (error) {
+          console.error('NewsAPI commodity news error:', error.message);
+        }
+      }
+
+      this.setCached(cacheKey, results.slice(0, 3));
+      return results.slice(0, 3);
+    } catch (error) {
+      console.error('Error in getCommodityNews:', error.message);
+      throw error;
+    }
   }
 
   // Get corporate news from available sources
@@ -208,7 +289,7 @@ class NewsService {
       return finalNews;
     } catch (error) {
       console.error('Error in getCorporateNews:', error.message);
-      return [];
+      throw error;
     }
   }
 }

@@ -226,19 +226,93 @@ class MarketDataService {
     }
   }
 
+  // Global Market Indices - US, Europe, Asia
+  async getGlobalMarkets() {
+    const cacheKey = 'global_markets';
+    const cached = this.getCached(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const indices = [
+        { symbol: '^DJI', key: 'dow', name: 'Dow' },
+        { symbol: '^GSPC', key: 'sp500', name: 'S&P 500' },
+        { symbol: '^IXIC', key: 'nasdaq', name: 'Nasdaq' },
+        { symbol: '^FTSE', key: 'ftse', name: 'FTSE' },
+        { symbol: '^GDAXI', key: 'dax', name: 'DAX' },
+        { symbol: '^FCHI', key: 'cac', name: 'CAC' },
+        { symbol: '^N225', key: 'nikkei', name: 'Nikkei' },
+        { symbol: '^HSI', key: 'hangseng', name: 'Hang Seng' },
+        { symbol: '000001.SS', key: 'shanghai', name: 'Shanghai' }
+      ];
+
+      const results = {};
+
+      for (const { symbol, key, name } of indices) {
+        try {
+          const response = await axios.get(
+            `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`,
+            {
+              params: { interval: '1d', range: '2d' },
+              timeout: 15000
+            }
+          );
+
+          const quote = response.data.chart.result[0];
+          const meta = quote.meta;
+          const currentPrice = meta.regularMarketPrice;
+          const previousClose = meta.previousClose || meta.chartPreviousClose;
+          const change = currentPrice - previousClose;
+          const changePercent = (change / previousClose) * 100;
+
+          results[key] = {
+            name,
+            price: currentPrice.toFixed(2),
+            change: changePercent.toFixed(2)
+          };
+        } catch (error) {
+          console.error(`Error fetching ${name}:`, error.message);
+        }
+      }
+
+      this.setCached(cacheKey, results);
+      return results;
+    } catch (error) {
+      console.error('Error in getGlobalMarkets:', error.message);
+      throw error;
+    }
+  }
+
+  // Bond Yields - Optional (returns empty object if not available)
+  async getDebtMarkets() {
+    const cacheKey = 'debt_markets';
+    const cached = this.getCached(cacheKey);
+    if (cached) return cached;
+
+    // Bond data not readily available via free APIs
+    // This can be extended with paid APIs like Alpha Vantage or Bloomberg
+    const results = {};
+
+    this.setCached(cacheKey, results);
+    return results;
+  }
+
   // Get all market data
   async getAllMarketData() {
     try {
-      const [stocks, currencies, commodities] = await Promise.all([
+      const [stocks, currencies, commodities, globalMarkets, debtMarkets] = await Promise.all([
         this.getIndianStocks(),
         this.getCurrencyRates(),
-        this.getCommodities()
+        this.getCommodities(),
+        this.getGlobalMarkets(),
+        this.getDebtMarkets()
       ]);
 
       return {
         ...stocks,
         ...currencies,
         ...commodities,
+        globalMarkets,
+        debtMarkets,
         lastUpdated: new Date().toISOString()
       };
     } catch (error) {
