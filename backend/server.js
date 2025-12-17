@@ -1,20 +1,15 @@
 import express from 'express';
 import cors from 'cors';
-import { config } from 'dotenv';
+import env from './config/environment.js';
 import marketRoutes from './routes/market.js';
 import newsRoutes from './routes/news.js';
-
-config();
+import supabaseNewsRoutes from './routes/supabaseNews.js';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
-const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // CORS Configuration
 const corsOptions = {
-  origin: NODE_ENV === 'production' 
-    ? process.env.CORS_ORIGIN?.split(',') || 'https://yourdomain.com'
-    : ['http://localhost:5173', 'http://localhost:3001', 'http://localhost:8080', 'http://127.0.0.1:8080'],
+  origin: env.isProduction ? env.corsOrigin : env.corsOrigin,
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -27,7 +22,7 @@ app.set('trust proxy', 1);
 
 // Request logging
 app.use((req, res, next) => {
-  if (NODE_ENV === 'development') {
+  if (env.isDevelopment) {
     console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   }
   next()
@@ -38,7 +33,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  if (NODE_ENV === 'production') {
+  if (env.isProduction) {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
   next();
@@ -47,6 +42,7 @@ app.use((req, res, next) => {
 // Routes
 app.use('/api/market', marketRoutes);
 app.use('/api/news', newsRoutes);
+app.use('/api/supabase-news', supabaseNewsRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -57,11 +53,14 @@ app.get('/health', (req, res) => {
 app.use((err, req, res, next) => {
   console.error('Error:', err);
   const statusCode = err.statusCode || 500;
-  const message = NODE_ENV === 'production' ? 'Internal server error' : err.message;
+  const message = env.isProduction ? 'Internal server error' : err.message;
   res.status(statusCode).json({ success: false, error: message });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Environment: ${NODE_ENV}`);
+app.listen(env.port, () => {
+  console.log(`Server running on port ${env.port}`);
+  console.log(`Environment: ${env.nodeEnv}`);
+  if (env.isDevelopment) {
+    console.log('CORS origins:', env.corsOrigin);
+  }
 });

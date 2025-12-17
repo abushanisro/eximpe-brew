@@ -1,22 +1,9 @@
 import axios from 'axios';
+import BaseService from './baseService.js';
 
-class MarketDataService {
+class MarketDataService extends BaseService {
   constructor() {
-    this.cache = new Map();
-    this.cacheTimeout = 30000; // 30 seconds
-  }
-
-  // Cache management
-  getCached(key) {
-    const cached = this.cache.get(key);
-    if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
-      return cached.data;
-    }
-    return null;
-  }
-
-  setCached(key, data) {
-    this.cache.set(key, { data, timestamp: Date.now() });
+    super(30000); // 30 seconds cache timeout for real-time updates
   }
 
   // Indian Stock Market Data - Using Yahoo Finance
@@ -66,110 +53,89 @@ class MarketDataService {
     }
   }
 
-  // Currency Exchange Rates - Using Frankfurter (Free, unlimited, ECB data)
+  // Currency Exchange Rates - Using Yahoo Finance for real-time data with previous close
   async getCurrencyRates() {
     const cacheKey = 'currency_rates';
     const cached = this.getCached(cacheKey);
     if (cached) return cached;
 
     try {
-      // Get latest rates from Frankfurter API - all currencies needed for real DXY calculation
-      const response = await axios.get('https://api.frankfurter.app/latest', {
-        params: { from: 'USD', to: 'INR,EUR,GBP,JPY,CAD,CHF,SEK' },
-        timeout: 15000
-      });
+      // Define currency pairs to fetch from Yahoo Finance
+      const currencyPairs = [
+        { symbol: 'USDINR=X', key: 'usdInr', decimals: 2 },
+        { symbol: 'EURINR=X', key: 'eurInr', decimals: 2 },
+        { symbol: 'GBPINR=X', key: 'gbpInr', decimals: 2 },
+        { symbol: 'AUDINR=X', key: 'audInr', decimals: 2 },
+        { symbol: 'CNYINR=X', key: 'cnyInr', decimals: 2 },
+        { symbol: 'JPYINR=X', key: 'jpyInr', decimals: 4 },
+        { symbol: 'EURUSD=X', key: 'eurUsd', decimals: 4 },
+        { symbol: 'GBPUSD=X', key: 'gbpUsd', decimals: 4 },
+        { symbol: 'USDJPY=X', key: 'usdJpy', decimals: 2 }
+      ];
 
-      const rates = response.data.rates;
-      const latestDate = response.data.date;
+      const results = {};
 
-      // Get previous business day's rates
-      const prevDate = new Date(latestDate);
-      prevDate.setDate(prevDate.getDate() - 1);
+      // Fetch all currency pairs in parallel
+      await Promise.all(
+        currencyPairs.map(async ({ symbol, key, decimals }) => {
+          try {
+            const response = await axios.get(
+              `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`,
+              {
+                params: { interval: '1d', range: '2d' },
+                timeout: 10000
+              }
+            );
 
-      // Keep going back until we find valid data (skip weekends)
-      let prevResponse;
-      let attempts = 0;
-      while (attempts < 7) {
-        const prevDateStr = prevDate.toISOString().split('T')[0];
-        try {
-          prevResponse = await axios.get(`https://api.frankfurter.app/${prevDateStr}`, {
-            params: { from: 'USD', to: 'INR,EUR,GBP,JPY,CAD,CHF,SEK' },
-            timeout: 15000
-          });
-          break;
-        } catch (err) {
-          prevDate.setDate(prevDate.getDate() - 1);
-          attempts++;
-        }
+            const quote = response.data.chart.result[0];
+            const meta = quote.meta;
+            const currentPrice = meta.regularMarketPrice;
+            const previousClose = meta.previousClose || meta.chartPreviousClose;
+            const change = currentPrice - previousClose;
+            const changePercent = (change / previousClose) * 100;
+
+            console.log(`${symbol}: Current=${currentPrice}, Previous=${previousClose}, Change=${changePercent.toFixed(2)}%`);
+
+            results[key] = {
+              price: currentPrice.toFixed(decimals),
+              change: changePercent.toFixed(2)
+            };
+          } catch (error) {
+            console.error(`Error fetching ${symbol}:`, error.message);
+          }
+        })
+      );
+
+      // Calculate AED/INR (AED is pegged to USD at 3.6725)
+      if (results.usdInr) {
+        const AED_TO_USD = 3.6725;
+        const aedInrPrice = parseFloat(results.usdInr.price) / AED_TO_USD;
+
+        results.aedInr = {
+          price: aedInrPrice.toFixed(2),
+          change: results.usdInr.change // AED follows USD due to peg
+        };
       }
 
-      if (!prevResponse) {
-        throw new Error('Could not fetch previous day rates from Frankfurter');
-      }
-
-      const prevRates = prevResponse.data.rates;
-
-      const calculateChange = (current, previous) => {
-        return (((current - previous) / previous) * 100).toFixed(2);
-      };
-
-      const results = {
-        usdInr: {
-          price: rates.INR.toFixed(2),
-          change: calculateChange(rates.INR, prevRates.INR)
-        },
-        eurUsd: {
-          price: (1 / rates.EUR).toFixed(4),
-          change: calculateChange(1 / rates.EUR, 1 / prevRates.EUR)
-        },
-        gbpUsd: {
-          price: (1 / rates.GBP).toFixed(4),
-          change: calculateChange(1 / rates.GBP, 1 / prevRates.GBP)
-        },
-        usdJpy: {
-          price: rates.JPY.toFixed(2),
-          change: calculateChange(rates.JPY, prevRates.JPY)
+      // Fetch DXY (Dollar Index) from Yahoo Finance for accurate real-time data
+      const dxyResponse = await axios.get(
+        'https://query1.finance.yahoo.com/v8/finance/chart/DX-Y.NYB',
+        {
+          params: { interval: '1d', range: '2d' },
+          timeout: 10000
         }
-      };
+      );
 
-      // Calculate DXY (Dollar Index) using REAL-TIME weighted basket - 100% accurate
-      const eurUsd = parseFloat(results.eurUsd.price);
-      const gbpUsd = parseFloat(results.gbpUsd.price);
-      const usdJpy = parseFloat(results.usdJpy.price);
-      const usdCad = rates.CAD;  // Real-time from Frankfurter
-      const usdChf = rates.CHF;  // Real-time from Frankfurter
-      const usdSek = rates.SEK;  // Real-time from Frankfurter
-
-      // Official DXY formula with real-time data
-      const dxyValue = 50.14348112 *
-        Math.pow((1/eurUsd), 0.576) *
-        Math.pow((1/gbpUsd), 0.119) *
-        Math.pow((usdJpy/100), 0.136) *
-        Math.pow(usdCad, 0.091) *
-        Math.pow(usdChf, 0.042) *
-        Math.pow(usdSek, 0.036);
-
-      // Calculate change for all DXY components
-      const prevEurUsd = 1 / prevRates.EUR;
-      const prevGbpUsd = 1 / prevRates.GBP;
-      const prevUsdJpy = prevRates.JPY;
-      const prevUsdCad = prevRates.CAD;
-      const prevUsdChf = prevRates.CHF;
-      const prevUsdSek = prevRates.SEK;
-
-      const prevDxyValue = 50.14348112 *
-        Math.pow((1/prevEurUsd), 0.576) *
-        Math.pow((1/prevGbpUsd), 0.119) *
-        Math.pow((prevUsdJpy/100), 0.136) *
-        Math.pow(prevUsdCad, 0.091) *
-        Math.pow(prevUsdChf, 0.042) *
-        Math.pow(prevUsdSek, 0.036);
-
-      const dxyChange = (((dxyValue - prevDxyValue) / prevDxyValue) * 100).toFixed(2);
+      const dxyQuote = dxyResponse.data.chart.result[0];
+      const dxyMeta = dxyQuote.meta;
+      const dxyCurrentPrice = dxyMeta.regularMarketPrice;
+      const dxyPreviousClose = dxyMeta.previousClose || dxyMeta.chartPreviousClose;
+      const dxyChange = dxyCurrentPrice - dxyPreviousClose;
+      const dxyChangePercent = (dxyChange / dxyPreviousClose) * 100;
 
       results.dxy = {
-        price: dxyValue.toFixed(2),
-        change: dxyChange
+        price: dxyCurrentPrice.toFixed(2),
+        change: dxyChangePercent.toFixed(2)
       };
 
       this.setCached(cacheKey, results);
@@ -296,29 +262,107 @@ class MarketDataService {
     return results;
   }
 
-  // Get all market data
-  async getAllMarketData() {
-    try {
-      const [stocks, currencies, commodities, globalMarkets, debtMarkets] = await Promise.all([
-        this.getIndianStocks(),
-        this.getCurrencyRates(),
-        this.getCommodities(),
-        this.getGlobalMarkets(),
-        this.getDebtMarkets()
-      ]);
+  // FII/DII Data - Real-time from NSE India API
+  async getFIIDIIData() {
+    const cacheKey = 'fii_dii_data';
+    const cached = this.getCached(cacheKey);
+    if (cached) return cached;
 
-      return {
-        ...stocks,
-        ...currencies,
-        ...commodities,
-        globalMarkets,
-        debtMarkets,
+    try {
+      // NSE India provides real-time FII/DII data
+      const response = await axios.get('https://www.nseindia.com/api/fiidiiTradeReact', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Referer': 'https://www.nseindia.com/',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        timeout: 15000
+      });
+
+      // NSE provides data in format: {category: "FII", buyValue: "123.45", sellValue: "234.56", ...}
+      const data = response.data;
+
+      let fiiData = { buy: 0, sell: 0, net: 0 };
+      let diiData = { buy: 0, sell: 0, net: 0 };
+
+      if (Array.isArray(data)) {
+        // Find FII and DII data in the array
+        data.forEach(item => {
+          if (item.category && item.category.toLowerCase().includes('fii')) {
+            fiiData.buy = parseFloat(item.buyValue || 0);
+            fiiData.sell = parseFloat(item.sellValue || 0);
+            fiiData.net = parseFloat(item.netValue || (fiiData.buy - fiiData.sell));
+          }
+          if (item.category && item.category.toLowerCase().includes('dii')) {
+            diiData.buy = parseFloat(item.buyValue || 0);
+            diiData.sell = parseFloat(item.sellValue || 0);
+            diiData.net = parseFloat(item.netValue || (diiData.buy - diiData.sell));
+          }
+        });
+      }
+
+      const results = {
+        fii: {
+          buy: Math.abs(fiiData.buy).toFixed(2),
+          sell: Math.abs(fiiData.sell).toFixed(2),
+          net: fiiData.net.toFixed(2),
+          netStatus: fiiData.net >= 0 ? 'bought' : 'sold',
+          netAmount: Math.abs(fiiData.net).toFixed(2)
+        },
+        dii: {
+          buy: Math.abs(diiData.buy).toFixed(2),
+          sell: Math.abs(diiData.sell).toFixed(2),
+          net: diiData.net.toFixed(2),
+          netStatus: diiData.net >= 0 ? 'bought' : 'sold',
+          netAmount: Math.abs(diiData.net).toFixed(2)
+        },
         lastUpdated: new Date().toISOString()
       };
+
+      this.setCached(cacheKey, results);
+      return results;
     } catch (error) {
-      console.error('Error in getAllMarketData:', error.message);
-      throw error;
+      console.error('Error fetching FII/DII data from NSE:', error.message);
+      console.error('NSE API may be blocking requests or rate limiting');
+      throw error; // Throw error instead of returning dummy data
     }
+  }
+
+  // Get all market data
+  async getAllMarketData() {
+    // Use Promise.allSettled to get partial data even if some APIs fail
+    const [stocks, currencies, commodities, globalMarkets, debtMarkets, fiiDii] = await Promise.allSettled([
+      this.getIndianStocks(),
+      this.getCurrencyRates(),
+      this.getCommodities(),
+      this.getGlobalMarkets(),
+      this.getDebtMarkets(),
+      this.getFIIDIIData()
+    ]);
+
+    // Only include successfully fetched data
+    const result = {
+      lastUpdated: new Date().toISOString()
+    };
+
+    if (stocks.status === 'fulfilled') Object.assign(result, stocks.value);
+    if (currencies.status === 'fulfilled') Object.assign(result, currencies.value);
+    if (commodities.status === 'fulfilled') Object.assign(result, commodities.value);
+    if (globalMarkets.status === 'fulfilled') result.globalMarkets = globalMarkets.value;
+    if (debtMarkets.status === 'fulfilled') result.debtMarkets = debtMarkets.value;
+    if (fiiDii.status === 'fulfilled') result.fiiDii = fiiDii.value;
+
+    // Log any failures
+    [stocks, currencies, commodities, globalMarkets, debtMarkets, fiiDii].forEach((promise, index) => {
+      if (promise.status === 'rejected') {
+        const names = ['stocks', 'currencies', 'commodities', 'globalMarkets', 'debtMarkets', 'fiiDii'];
+        console.error(`Failed to fetch ${names[index]}:`, promise.reason?.message);
+      }
+    });
+
+    return result;
   }
 }
 
