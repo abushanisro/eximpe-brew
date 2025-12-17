@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: eximpe-dashboard
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+    # Explicitly set root directory to repo root, not src/
+    rootDir: .
