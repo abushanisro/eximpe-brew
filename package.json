@@ -2,13 +2,12 @@
   "name": "eximpe-dashboard",
   "private": true,
   "version": "1.0.0",
-  "type": "module",
- "scripts": {
-  "dev": "next dev",
-  "build": "rimraf .next && next build",
-  "start": "next start",
-  "lint": "next lint"
-},
+  "scripts": {
+    "dev": "next dev",
+    "build": "rimraf .next && next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
