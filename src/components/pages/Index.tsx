@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { apiService, type MarketData, type NewsItem } from '../services/api';
-import MarketOverview from '../components/MarketOverview';
-import CategorizedNews from '../components/CategorizedNews';
+import { apiService, type MarketData, type NewsItem } from '../../services/api';
+import MarketOverview from '../MarketOverview';
+import CategorizedNews from '../CategorizedNews';
 
 const Index = () => {
     const [marketData, setMarketData] = useState<MarketData>({

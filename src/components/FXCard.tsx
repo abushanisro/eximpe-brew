@@ -76,9 +76,6 @@ const FXCard = ({ rates }: FXCardProps) => {
   const getChangeColor = (change: string) =>
     parseFloat(change) >= 0 ? 'text-green-600' : 'text-red-600';
 
-  const getChangeBg = (change: string) =>
-    parseFloat(change) >= 0 ? 'bg-green-50' : 'bg-red-50';
-
   const TrendIcon = (change: string) =>
     parseFloat(change) >= 0 ? TrendingUp : TrendingDown;
 

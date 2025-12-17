@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo } from 'react';
 
 interface MarketIndicatorProps {
   title: string;
@@ -8,7 +8,6 @@ interface MarketIndicatorProps {
   value: string;
   change: string;
   changeValue?: string;
-  sparklineData?: number[];
 }
 
 const MarketIndicator = ({
@@ -17,16 +16,9 @@ const MarketIndicator = ({
   value,
   change,
   changeValue,
-  sparklineData = []
 }: MarketIndicatorProps) => {
   const changeNum = parseFloat(change);
   const isNegative = changeNum < 0;
-  const [mounted, setMounted] = useState(false);
-
-  // Only generate on client side to avoid hydration mismatch
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   // Seeded random number generator for consistent SSR/Client rendering
   const seededRandom = (seed: number) => {

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import useEmblaCarousel from 'embla-carousel-react';
 import Autoplay from 'embla-carousel-autoplay';
-import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import MarketIndicator from './MarketIndicator';
 import { apiService, type CurrencyInsights } from '../services/api';
 
@@ -22,7 +22,6 @@ interface MarketData {
 interface MarketOverviewProps {
   marketData: MarketData;
   lastUpdated: Date;
-  onRefresh?: () => void;
 }
 
 interface FXRate {
@@ -44,17 +43,9 @@ const FX_CONFIG: Omit<FXRate, 'price' | 'change' | 'aiInsight'>[] = [
   { code: 'AUD', name: 'Australian Dollar', flag: '🇦🇺', impact: 'Coal & minerals' },
 ];
 
-const MarketOverview = ({ marketData, lastUpdated, onRefresh }: MarketOverviewProps) => {
-  const [isRefreshing, setIsRefreshing] = useState(false);
+const MarketOverview = ({ marketData, lastUpdated }: MarketOverviewProps) => {
   const [currencyInsights, setCurrencyInsights] = useState<CurrencyInsights>({});
   const [insightsLoading, setInsightsLoading] = useState(true);
-
-  const handleRefresh = async () => {
-    if (isRefreshing || !onRefresh) return;
-    setIsRefreshing(true);
-    await onRefresh();
-    setTimeout(() => setIsRefreshing(false), 1000);
-  };
   const [emblaRef, emblaApi] = useEmblaCarousel(
     { loop: true, align: 'center' },
     [Autoplay({ delay: 4000, stopOnInteraction: false })]
@@ -117,18 +108,12 @@ const MarketOverview = ({ marketData, lastUpdated, onRefresh }: MarketOverviewPr
     if (!emblaApi) return;
     onSelect();
     emblaApi.on('select', onSelect);
-    return () => emblaApi.off('select', onSelect);
+    return () => {
+      emblaApi.off('select', onSelect);
+    };
   }, [emblaApi, onSelect]);
 
-  const getChangeColor = (change: string) => {
-    const num = parseFloat(change);
-    return num >= 0 ? 'text-green-600' : 'text-red-600';
-  };
-
-  const formatChange = (change: string) => {
-    const num = parseFloat(change);
-    return `${num >= 0 ? '↑' : '↓'}${Math.abs(num)}%`;
-  };
+  
 
   return (
     <div className="mb-6">

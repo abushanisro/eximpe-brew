@@ -1,0 +1,3 @@
+module.exports=[97664,(a,b,c)=>{let{createClientModuleProxy:d}=a.r(6821);a.n(d("[project]/OneDrive/Desktop/eximpe/node_modules/next/dist/client/components/builtin/global-error.js <module evaluation>"))},57211,(a,b,c)=>{let{createClientModuleProxy:d}=a.r(6821);a.n(d("[project]/OneDrive/Desktop/eximpe/node_modules/next/dist/client/components/builtin/global-error.js"))},64015,a=>{"use strict";a.i(97664);var b=a.i(57211);a.n(b)}];
+
+//# sourceMappingURL=8f035_next_dist_client_components_builtin_global-error_604d943d.js.map
