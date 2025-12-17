@@ -1,0 +1,4 @@
+# Force Render to ignore any cached app router files
+src/app/
+.next/
+node_modules/
