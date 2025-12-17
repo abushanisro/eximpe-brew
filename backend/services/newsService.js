@@ -1,4 +1,3 @@
-import axios from 'axios';
 import Parser from 'rss-parser';
 import BaseService from './baseService.js';
 import supabaseNewsService from './supabaseNewsService.js';
@@ -11,6 +10,38 @@ class NewsService extends BaseService {
         item: ['pubDate', 'description', 'content:encoded', 'contentSnippet']
       }
     });
+  }
+
+  // Helper: Build URL with query parameters
+  buildUrl(baseUrl, params = {}) {
+    const url = new URL(baseUrl);
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        url.searchParams.append(key, value);
+      }
+    });
+    return url.toString();
+  }
+
+  // Helper: Fetch with timeout
+  async fetchWithTimeout(url, timeout = 10000, options = {}) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      return await response.json();
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   // Analyze sentiment from title
@@ -33,19 +64,18 @@ class NewsService extends BaseService {
     try {
       // Enhanced query with global trade focus
       const query = 'trade OR export OR import OR tariff OR "Federal Reserve" OR "dollar index" OR "yuan rate" OR china economy OR US economy OR global trade OR WTO OR trade war OR supply chain';
-      const response = await axios.get('https://api.gdeltproject.org/api/v2/doc/doc', {
-        params: {
-          query: query,
-          mode: 'artlist',
-          maxrecords: 30,
-          format: 'json',
-          sort: 'datedesc'
-        },
-        timeout: 10000
+      const url = this.buildUrl('https://api.gdeltproject.org/api/v2/doc/doc', {
+        query: query,
+        mode: 'artlist',
+        maxrecords: 30,
+        format: 'json',
+        sort: 'datedesc'
       });
 
-      if (response.data && response.data.articles) {
-        return response.data.articles.map(article => ({
+      const data = await this.fetchWithTimeout(url, 10000);
+
+      if (data && data.articles) {
+        return data.articles.map(article => ({
           title: article.title || 'No title',
           source: article.domain || 'Unknown',
           time: this.getRelativeTime(new Date(article.seendate)),
@@ -202,18 +232,17 @@ class NewsService extends BaseService {
     }
 
     try {
-      const response = await axios.get('https://newsapi.org/v2/everything', {
-        params: {
-          q: 'India export OR India import OR India trade OR customs OR DGFT OR shipping OR logistics OR "foreign trade" OR "trade policy"',
-          language: 'en',
-          sortBy: 'publishedAt',
-          pageSize: 15,
-          apiKey: apiKey
-        },
-        timeout: 15000
+      const url = this.buildUrl('https://newsapi.org/v2/everything', {
+        q: 'India export OR India import OR India trade OR customs OR DGFT OR shipping OR logistics OR "foreign trade" OR "trade policy"',
+        language: 'en',
+        sortBy: 'publishedAt',
+        pageSize: 15,
+        apiKey: apiKey
       });
 
-      return response.data.articles.map(article => ({
+      const data = await this.fetchWithTimeout(url, 15000);
+
+      return data.articles.map(article => ({
         title: article.title,
         source: article.source.name,
         time: this.getRelativeTime(new Date(article.publishedAt)),
@@ -236,18 +265,17 @@ class NewsService extends BaseService {
     }
 
     try {
-      const response = await axios.get('https://gnews.io/api/v4/search', {
-        params: {
-          q: 'India export import trade logistics customs shipping',
-          lang: 'en',
-          country: 'in',
-          max: 15,
-          apikey: apiKey
-        },
-        timeout: 15000
+      const url = this.buildUrl('https://gnews.io/api/v4/search', {
+        q: 'India export import trade logistics customs shipping',
+        lang: 'en',
+        country: 'in',
+        max: 15,
+        apikey: apiKey
       });
 
-      return response.data.articles.map(article => ({
+      const data = await this.fetchWithTimeout(url, 15000);
+
+      return data.articles.map(article => ({
         title: article.title,
         source: article.source.name,
         time: this.getRelativeTime(new Date(article.publishedAt)),
@@ -269,15 +297,14 @@ class NewsService extends BaseService {
     }
 
     try {
-      const response = await axios.get('https://finnhub.io/api/v1/news', {
-        params: {
-          category: 'general',
-          token: apiKey
-        },
-        timeout: 15000
+      const url = this.buildUrl('https://finnhub.io/api/v1/news', {
+        category: 'general',
+        token: apiKey
       });
 
-      return response.data.slice(0, 10).map(article => ({
+      const data = await this.fetchWithTimeout(url, 15000);
+
+      return data.slice(0, 10).map(article => ({
         title: article.headline,
         source: article.source,
         time: this.getRelativeTime(new Date(article.datetime * 1000)),
@@ -295,16 +322,15 @@ class NewsService extends BaseService {
   async getNewsFromRSS() {
     try {
       // Using NSE India's announcements (no auth required)
-      const response = await axios.get('https://www.nseindia.com/api/latest-circular', {
+      const data = await this.fetchWithTimeout('https://www.nseindia.com/api/latest-circular', 15000, {
         headers: {
           'User-Agent': 'Mozilla/5.0',
           'Accept': 'application/json'
-        },
-        timeout: 15000
+        }
       });
 
-      if (response.data && Array.isArray(response.data)) {
-        return response.data.slice(0, 10).map(item => ({
+      if (data && Array.isArray(data)) {
+        return data.slice(0, 10).map(item => ({
           title: item.subject || item.title || 'NSE Announcement',
           source: 'NSE India',
           time: this.getRelativeTime(new Date(item.publishedDate)),
@@ -390,19 +416,18 @@ class NewsService extends BaseService {
 
       // 1. Try GDELT for trade policy and economic news (FREE, NO LIMITS)
       try {
-        const response = await axios.get('https://api.gdeltproject.org/api/v2/doc/doc', {
-          params: {
-            query: 'india trade policy OR india GDP OR RBI currency OR india economic policy OR trade deficit india OR india FTA',
-            mode: 'artlist',
-            maxrecords: 15,
-            format: 'json',
-            sort: 'datedesc'
-          },
-          timeout: 10000
+        const url = this.buildUrl('https://api.gdeltproject.org/api/v2/doc/doc', {
+          query: 'india trade policy OR india GDP OR RBI currency OR india economic policy OR trade deficit india OR india FTA',
+          mode: 'artlist',
+          maxrecords: 15,
+          format: 'json',
+          sort: 'datedesc'
         });
 
-        if (response.data && response.data.articles) {
-          results.push(...response.data.articles.map(article => ({
+        const data = await this.fetchWithTimeout(url, 10000);
+
+        if (data && data.articles) {
+          results.push(...data.articles.map(article => ({
             title: article.title || 'No title',
             source: article.domain || 'Unknown',
             time: this.getRelativeTime(new Date(article.seendate))
@@ -441,18 +466,17 @@ class NewsService extends BaseService {
       const newsApiKey = process.env.NEWSAPI_KEY;
       if (newsApiKey && results.length < 8) {
         try {
-          const response = await axios.get('https://newsapi.org/v2/everything', {
-            params: {
-              q: 'India trade policy OR India GDP OR India manufacturing OR "trade deficit" OR "foreign trade policy" OR DGFT',
-              language: 'en',
-              sortBy: 'publishedAt',
-              pageSize: 10,
-              apiKey: newsApiKey
-            },
-            timeout: 15000
+          const url = this.buildUrl('https://newsapi.org/v2/everything', {
+            q: 'India trade policy OR India GDP OR India manufacturing OR "trade deficit" OR "foreign trade policy" OR DGFT',
+            language: 'en',
+            sortBy: 'publishedAt',
+            pageSize: 10,
+            apiKey: newsApiKey
           });
 
-          results.push(...response.data.articles.map(article => ({
+          const data = await this.fetchWithTimeout(url, 15000);
+
+          results.push(...data.articles.map(article => ({
             title: article.title,
             source: article.source.name,
             time: this.getRelativeTime(new Date(article.publishedAt))
@@ -481,19 +505,18 @@ class NewsService extends BaseService {
 
       // 1. Try GDELT for commodity & shipping news (FREE, NO LIMITS)
       try {
-        const response = await axios.get('https://api.gdeltproject.org/api/v2/doc/doc', {
-          params: {
-            query: 'gold price OR oil price OR brent crude OR shipping cost OR freight rates OR steel prices india OR aluminum export',
-            mode: 'artlist',
-            maxrecords: 8,
-            format: 'json',
-            sort: 'datedesc'
-          },
-          timeout: 10000
+        const url = this.buildUrl('https://api.gdeltproject.org/api/v2/doc/doc', {
+          query: 'gold price OR oil price OR brent crude OR shipping cost OR freight rates OR steel prices india OR aluminum export',
+          mode: 'artlist',
+          maxrecords: 8,
+          format: 'json',
+          sort: 'datedesc'
         });
 
-        if (response.data && response.data.articles) {
-          results.push(...response.data.articles.map(article => ({
+        const data = await this.fetchWithTimeout(url, 10000);
+
+        if (data && data.articles) {
+          results.push(...data.articles.map(article => ({
             title: article.title || 'No title',
             source: article.domain || 'Unknown',
             time: this.getRelativeTime(new Date(article.seendate))
@@ -532,18 +555,17 @@ class NewsService extends BaseService {
       const newsApiKey = process.env.NEWSAPI_KEY;
       if (newsApiKey && results.length < 2) {
         try {
-          const response = await axios.get('https://newsapi.org/v2/everything', {
-            params: {
-              q: 'gold price OR oil price OR brent crude OR "freight rates" OR "shipping cost" OR "commodity export india"',
-              language: 'en',
-              sortBy: 'publishedAt',
-              pageSize: 5,
-              apiKey: newsApiKey
-            },
-            timeout: 15000
+          const url = this.buildUrl('https://newsapi.org/v2/everything', {
+            q: 'gold price OR oil price OR brent crude OR "freight rates" OR "shipping cost" OR "commodity export india"',
+            language: 'en',
+            sortBy: 'publishedAt',
+            pageSize: 5,
+            apiKey: newsApiKey
           });
 
-          results.push(...response.data.articles.map(article => ({
+          const data = await this.fetchWithTimeout(url, 15000);
+
+          results.push(...data.articles.map(article => ({
             title: article.title,
             source: article.source.name,
             time: this.getRelativeTime(new Date(article.publishedAt))
@@ -566,20 +588,19 @@ class NewsService extends BaseService {
     try {
       // Broader query to ensure we get more USA news
       const query = 'United States OR America OR "US economy" OR "Federal Reserve" OR "Wall Street" OR "US dollar" OR "US trade" OR "American economy" OR Washington OR "US inflation" OR "US jobs"';
-      const response = await axios.get('https://api.gdeltproject.org/api/v2/doc/doc', {
-        params: {
-          query: query,
-          mode: 'artlist',
-          maxrecords: 30,
-          format: 'json',
-          sort: 'datedesc',
-          timespan: '72h'
-        },
-        timeout: 10000
+      const url = this.buildUrl('https://api.gdeltproject.org/api/v2/doc/doc', {
+        query: query,
+        mode: 'artlist',
+        maxrecords: 30,
+        format: 'json',
+        sort: 'datedesc',
+        timespan: '72h'
       });
 
-      if (response.data && response.data.articles) {
-        const filtered = response.data.articles
+      const data = await this.fetchWithTimeout(url, 10000);
+
+      if (data && data.articles) {
+        const filtered = data.articles
           .filter(article => {
             const title = (article.title || '').toLowerCase();
             const combined = title + ' ' + (article.domain || '').toLowerCase();
@@ -616,20 +637,19 @@ class NewsService extends BaseService {
     try {
       // Broader query to ensure we get more China news
       const query = 'China OR Chinese OR Beijing OR Shanghai OR "Hong Kong" OR yuan OR renminbi OR "China economy" OR "China trade" OR "Chinese economy" OR PBOC OR "trade war" OR "China manufacturing"';
-      const response = await axios.get('https://api.gdeltproject.org/api/v2/doc/doc', {
-        params: {
-          query: query,
-          mode: 'artlist',
-          maxrecords: 30,
-          format: 'json',
-          sort: 'datedesc',
-          timespan: '72h'
-        },
-        timeout: 10000
+      const url = this.buildUrl('https://api.gdeltproject.org/api/v2/doc/doc', {
+        query: query,
+        mode: 'artlist',
+        maxrecords: 30,
+        format: 'json',
+        sort: 'datedesc',
+        timespan: '72h'
       });
 
-      if (response.data && response.data.articles) {
-        const filtered = response.data.articles
+      const data = await this.fetchWithTimeout(url, 10000);
+
+      if (data && data.articles) {
+        const filtered = data.articles
           .filter(article => {
             const title = (article.title || '').toLowerCase();
             const combined = title + ' ' + (article.domain || '').toLowerCase();
@@ -664,20 +684,19 @@ class NewsService extends BaseService {
     try {
       // Focus on Indian import/export and trade
       const query = 'India OR Indian OR "India export" OR "India import" OR "India trade" OR "Indian economy" OR rupee OR RBI OR Modi OR "India manufacturing" OR DGFT OR "foreign trade" OR "India customs"';
-      const response = await axios.get('https://api.gdeltproject.org/api/v2/doc/doc', {
-        params: {
-          query: query,
-          mode: 'artlist',
-          maxrecords: 30,
-          format: 'json',
-          sort: 'datedesc',
-          timespan: '72h'
-        },
-        timeout: 10000
+      const url = this.buildUrl('https://api.gdeltproject.org/api/v2/doc/doc', {
+        query: query,
+        mode: 'artlist',
+        maxrecords: 30,
+        format: 'json',
+        sort: 'datedesc',
+        timespan: '72h'
       });
 
-      if (response.data && response.data.articles) {
-        const filtered = response.data.articles
+      const data = await this.fetchWithTimeout(url, 10000);
+
+      if (data && data.articles) {
+        const filtered = data.articles
           .filter(article => {
             const title = (article.title || '').toLowerCase();
             const combined = title + ' ' + (article.domain || '').toLowerCase();
@@ -712,20 +731,19 @@ class NewsService extends BaseService {
     try {
       // Focus on regions other than USA, China, India
       const query = '"European Union" OR Europe OR EU OR Brexit OR Germany OR France OR UK OR Britain OR "Middle East" OR Africa OR "Latin America" OR Brazil OR Mexico OR Russia OR Japan OR Korea OR Australia OR Canada OR OPEC OR "oil price" OR "global economy" OR "international trade" OR forex OR currency OR WTO';
-      const response = await axios.get('https://api.gdeltproject.org/api/v2/doc/doc', {
-        params: {
-          query: query,
-          mode: 'artlist',
-          maxrecords: 30,
-          format: 'json',
-          sort: 'datedesc',
-          timespan: '72h'
-        },
-        timeout: 10000
+      const url = this.buildUrl('https://api.gdeltproject.org/api/v2/doc/doc', {
+        query: query,
+        mode: 'artlist',
+        maxrecords: 30,
+        format: 'json',
+        sort: 'datedesc',
+        timespan: '72h'
       });
 
-      if (response.data && response.data.articles) {
-        const filtered = response.data.articles
+      const data = await this.fetchWithTimeout(url, 10000);
+
+      if (data && data.articles) {
+        const filtered = data.articles
           .filter(article => {
             const title = (article.title || '').toLowerCase();
             // Must NOT be primarily about USA, China, or India

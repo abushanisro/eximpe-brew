@@ -1,5 +1,3 @@
-import axios from 'axios';
-
 class GroqService {
   constructor() {
     this.apiKey = process.env.GROQ_API_KEY;
@@ -7,6 +5,27 @@ class GroqService {
     this.model = 'llama-3.3-70b-versatile';
     this.cache = new Map();
     this.cacheExpiry = 5 * 60 * 1000; // 5 minutes
+  }
+
+  // Helper: Fetch with timeout
+  async fetchWithTimeout(url, timeout = 10000, options = {}) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      return await response.json();
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   async getCurrencyInsight(currencyData, marketNews) {
@@ -27,14 +46,21 @@ class GroqService {
 
       console.log(`\n🤖 Analyzing ${currencyData.pair} (${currencyData.change}%) with ${newsArray.length} news items`);
 
-      const response = await axios.post(
+      const data = await this.fetchWithTimeout(
         `${this.baseURL}/chat/completions`,
+        10000,
         {
-          model: this.model,
-          messages: [
-            {
-              role: 'system',
-              content: `You are an expert currency analyst for import/export businesses. Provide concise, actionable insights.
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: this.model,
+            messages: [
+              {
+                role: 'system',
+                content: `You are an expert currency analyst for import/export businesses. Provide concise, actionable insights.
 
 CRITICAL RULES:
 - DO NOT repeat the currency name (it's already shown in the card header)
@@ -56,26 +82,20 @@ Your response structure:
 2. Actionable advice for importers
 
 Never write: "USD/INR" or "dollar" or "euro" - just describe the situation and give advice.`
-            },
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          temperature: 0.7,
-          max_tokens: 120,
-          top_p: 0.9
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 10000
+              },
+              {
+                role: 'user',
+                content: prompt
+              }
+            ],
+            temperature: 0.7,
+            max_tokens: 120,
+            top_p: 0.9
+          })
         }
       );
 
-      let insight = response.data.choices[0].message.content.trim();
+      let insight = data.choices[0].message.content.trim();
 
       // Limit to 2 sentences max
       const sentences = insight.split('.');
@@ -112,7 +132,7 @@ Never write: "USD/INR" or "dollar" or "euro" - just describe the situation and g
 
       return insight;
     } catch (error) {
-      console.error(`Groq API Error:`, error.response?.data || error.message);
+      console.error(`Groq API Error:`, error.message);
       return null;
     }
   }

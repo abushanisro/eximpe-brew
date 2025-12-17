@@ -1,9 +1,40 @@
-import axios from 'axios';
 import BaseService from './baseService.js';
 
 class MarketDataService extends BaseService {
   constructor() {
     super(30000); // 30 seconds cache timeout for real-time updates
+  }
+
+  // Helper: Build URL with query parameters
+  buildUrl(baseUrl, params = {}) {
+    const url = new URL(baseUrl);
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        url.searchParams.append(key, value);
+      }
+    });
+    return url.toString();
+  }
+
+  // Helper: Fetch with timeout
+  async fetchWithTimeout(url, timeout = 10000, options = {}) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      return await response.json();
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   // Indian Stock Market Data - Using Yahoo Finance
@@ -23,15 +54,14 @@ class MarketDataService extends BaseService {
 
       for (const { symbol, key } of symbols) {
         // Using Yahoo Finance quote endpoint (no auth required)
-        const response = await axios.get(
+        const url = this.buildUrl(
           `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`,
-          {
-            params: { interval: '1d', range: '2d' },
-            timeout: 15000
-          }
+          { interval: '1d', range: '2d' }
         );
 
-        const quote = response.data.chart.result[0];
+        const data = await this.fetchWithTimeout(url, 15000);
+
+        const quote = data.chart.result[0];
         const meta = quote.meta;
         const currentPrice = meta.regularMarketPrice;
         const previousClose = meta.previousClose || meta.chartPreviousClose;
@@ -79,15 +109,14 @@ class MarketDataService extends BaseService {
       await Promise.all(
         currencyPairs.map(async ({ symbol, key, decimals }) => {
           try {
-            const response = await axios.get(
+            const url = this.buildUrl(
               `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`,
-              {
-                params: { interval: '1d', range: '2d' },
-                timeout: 10000
-              }
+              { interval: '1d', range: '2d' }
             );
 
-            const quote = response.data.chart.result[0];
+            const data = await this.fetchWithTimeout(url, 10000);
+
+            const quote = data.chart.result[0];
             const meta = quote.meta;
             const currentPrice = meta.regularMarketPrice;
             const previousClose = meta.previousClose || meta.chartPreviousClose;
@@ -118,15 +147,14 @@ class MarketDataService extends BaseService {
       }
 
       // Fetch DXY (Dollar Index) from Yahoo Finance for accurate real-time data
-      const dxyResponse = await axios.get(
+      const dxyUrl = this.buildUrl(
         'https://query1.finance.yahoo.com/v8/finance/chart/DX-Y.NYB',
-        {
-          params: { interval: '1d', range: '2d' },
-          timeout: 10000
-        }
+        { interval: '1d', range: '2d' }
       );
 
-      const dxyQuote = dxyResponse.data.chart.result[0];
+      const dxyData = await this.fetchWithTimeout(dxyUrl, 10000);
+
+      const dxyQuote = dxyData.chart.result[0];
       const dxyMeta = dxyQuote.meta;
       const dxyCurrentPrice = dxyMeta.regularMarketPrice;
       const dxyPreviousClose = dxyMeta.previousClose || dxyMeta.chartPreviousClose;
@@ -161,15 +189,14 @@ class MarketDataService extends BaseService {
       const results = {};
 
       for (const { symbol, key } of commodities) {
-        const response = await axios.get(
+        const url = this.buildUrl(
           `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`,
-          {
-            params: { interval: '1d', range: '2d' },
-            timeout: 15000
-          }
+          { interval: '1d', range: '2d' }
         );
 
-        const quote = response.data.chart.result[0];
+        const data = await this.fetchWithTimeout(url, 15000);
+
+        const quote = data.chart.result[0];
         const meta = quote.meta;
         const currentPrice = meta.regularMarketPrice;
         const previousClose = meta.previousClose || meta.chartPreviousClose;
@@ -215,15 +242,14 @@ class MarketDataService extends BaseService {
 
       for (const { symbol, key, name } of indices) {
         try {
-          const response = await axios.get(
+          const url = this.buildUrl(
             `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`,
-            {
-              params: { interval: '1d', range: '2d' },
-              timeout: 15000
-            }
+            { interval: '1d', range: '2d' }
           );
 
-          const quote = response.data.chart.result[0];
+          const data = await this.fetchWithTimeout(url, 15000);
+
+          const quote = data.chart.result[0];
           const meta = quote.meta;
           const currentPrice = meta.regularMarketPrice;
           const previousClose = meta.previousClose || meta.chartPreviousClose;
@@ -270,19 +296,17 @@ class MarketDataService extends BaseService {
 
     try {
       // NSE India provides real-time FII/DII data
-      const response = await axios.get('https://www.nseindia.com/api/fiidiiTradeReact', {
+      const data = await this.fetchWithTimeout('https://www.nseindia.com/api/fiidiiTradeReact', 15000, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
           'Accept': 'application/json',
           'Accept-Language': 'en-US,en;q=0.9',
           'Referer': 'https://www.nseindia.com/',
           'X-Requested-With': 'XMLHttpRequest'
-        },
-        timeout: 15000
+        }
       });
 
       // NSE provides data in format: {category: "FII", buyValue: "123.45", sellValue: "234.56", ...}
-      const data = response.data;
 
       let fiiData = { buy: 0, sell: 0, net: 0 };
       let diiData = { buy: 0, sell: 0, net: 0 };

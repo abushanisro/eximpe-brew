@@ -1,10 +1,41 @@
-import axios from 'axios';
 import BaseService from './baseService.js';
 import groqService from './groqService.js';
 
 class CurrencyInsightsService extends BaseService {
   constructor() {
     super(300000); // 5 minutes cache
+  }
+
+  // Helper: Build URL with query parameters
+  buildUrl(baseUrl, params = {}) {
+    const url = new URL(baseUrl);
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        url.searchParams.append(key, value);
+      }
+    });
+    return url.toString();
+  }
+
+  // Helper: Fetch with timeout
+  async fetchWithTimeout(url, timeout = 10000, options = {}) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      return await response.json();
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   async getCurrencyInsights(currencyPair, marketData = null) {
@@ -69,19 +100,18 @@ class CurrencyInsightsService extends BaseService {
     const query = queries[currencyPair] || currencyPair;
 
     try {
-      const response = await axios.get('https://api.gdeltproject.org/api/v2/doc/doc', {
-        params: {
-          query: query,
-          mode: 'artlist',
-          maxrecords: 10,
-          format: 'json',
-          sort: 'datedesc',
-          timespan: '24h'
-        },
-        timeout: 10000
+      const url = this.buildUrl('https://api.gdeltproject.org/api/v2/doc/doc', {
+        query: query,
+        mode: 'artlist',
+        maxrecords: 10,
+        format: 'json',
+        sort: 'datedesc',
+        timespan: '24h'
       });
 
-      if (!response.data?.articles?.length) {
+      const data = await this.fetchWithTimeout(url, 10000);
+
+      if (!data?.articles?.length) {
         return null;
       }
 
@@ -89,7 +119,7 @@ class CurrencyInsightsService extends BaseService {
       const uniqueArticles = [];
       const seenTitles = new Set();
 
-      for (const article of response.data.articles) {
+      for (const article of data.articles) {
         const title = article.title?.toLowerCase().trim();
         if (title && !seenTitles.has(title)) {
           seenTitles.add(title);
